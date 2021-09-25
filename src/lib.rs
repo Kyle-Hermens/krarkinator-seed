@@ -16,6 +16,9 @@ use fixed_vec_deque::FixedVecDeque;
 use generated::css_classes::C;
 use seed::{prelude::*, *};
 use Visibility::*;
+use crate::page::coin_flip::{Coin, FlipResult};
+use rand::rngs::ThreadRng;
+use rand::thread_rng;
 
 const TITLE_SUFFIX: &str = "Kavik.cz";
 // https://mailtolink.me/
@@ -43,6 +46,11 @@ fn init(url: Url, orders: &mut impl Orders<Msg>) -> Model {
         scroll_history: ScrollHistory::new(),
         menu_visibility: Hidden,
         in_prerendering: is_in_prerendering(),
+        flip_count: 2,
+        total_casts: 0,
+        cast_until_termination: true,
+        krark_count: 2,
+        total_coins_flipped: 0,
     }
 }
 
@@ -82,6 +90,12 @@ pub struct Model {
     pub scroll_history: ScrollHistory,
     pub menu_visibility: Visibility,
     pub in_prerendering: bool,
+
+    pub flip_count: usize,
+    pub total_casts: usize,
+    pub cast_until_termination: bool,
+    pub krark_count: usize,
+    pub total_coins_flipped: usize,
 }
 
 // ------ Page ------
@@ -130,6 +144,12 @@ pub enum Msg {
     Scrolled,
     ToggleMenu,
     HideMenu,
+
+    FlipCoins,
+    SetFlipCount(usize),
+    CastUntilTermination,
+    CastForSetAmount,
+    SetKrarkCount(usize),
 }
 
 pub fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
@@ -156,7 +176,69 @@ pub fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
         Msg::HideMenu => {
             model.menu_visibility = Hidden;
         },
+
+
+        Msg::FlipCoins => {
+            let copy_count = get_total_spell_casts(model);
+
+            model.total_casts = copy_count;
+
+        },
+        Msg::SetFlipCount(_0) => {
+            model.flip_count = _0
+        },
+        Msg::CastUntilTermination => {
+            model.cast_until_termination = true
+        },
+        Msg::CastForSetAmount => {
+            model.cast_until_termination = false
+        }
+        Msg::SetKrarkCount(_0) => {
+           model.krark_count = _0
+        }
     }
+}
+
+fn get_total_spell_casts(model: &mut Model) -> usize {
+    let mut rng = thread_rng();
+    let mut copy_count = 0_usize;
+    let mut total_coins_flipped = 0_usize;
+    if model.cast_until_termination {
+        let mut tails_seen = true;
+        while tails_seen && copy_count != usize::MAX {
+            tails_seen = false;
+            for flip in Coin::flip(&mut rng, 0, model.krark_count) {
+                if !tails_seen && (flip == FlipResult::Tails || flip == FlipResult::Both) {
+                    tails_seen = true;
+                } else {
+                    copy_count = copy_count.saturating_add(1);
+                }
+                total_coins_flipped = total_coins_flipped.saturating_add(1);
+            }
+            if !tails_seen {
+                copy_count = copy_count.saturating_add(1);
+            }
+        }
+
+
+    } else {
+       for _ in 0..model.flip_count {
+           let mut tails_seen = false;
+           for flip in Coin::flip(&mut rng, 0, model.krark_count) {
+               if !tails_seen && (flip == FlipResult::Tails || flip == FlipResult::Both) {
+                   tails_seen = true;
+               } else {
+                   copy_count = copy_count.saturating_add(1);
+               }
+               total_coins_flipped = total_coins_flipped.saturating_add(1);
+           }
+           if !tails_seen {
+               copy_count = copy_count.saturating_add(1);
+           }
+       }
+    }
+    model.total_coins_flipped = total_coins_flipped;
+    copy_count
 }
 
 // ------ ------
@@ -171,21 +253,21 @@ pub fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
 //   - https://codepoints.net/U+FE0E
 
 pub fn view(model: &Model) -> impl IntoNodes<Msg> {
-    div![
-        C![
-            IF!(not(model.in_prerendering) => C.fade_in),
-            C.min_h_screen,
-            C.flex,
-            C.flex_col,
-        ],
+    // div![
+    //     C![
+    //         IF!(not(model.in_prerendering) => C.fade_in),
+    //         C.min_h_screen,
+    //         C.flex,
+    //         C.flex_col,
+    //     ],
         match model.page {
-            Page::Home => page::home::view(&model.base_url),
+            Page::Home => page::home::view(&model.base_url, &model),
             Page::About => page::about::view(),
             Page::NotFound => page::not_found::view(),
-        },
-        page::partial::header::view(model),
-        page::partial::footer::view(),
-    ]
+        }
+        // page::partial::header::view(model),
+        // page::partial::footer::view(),
+    // ]
 }
 
 pub fn image_src(image: &str) -> String {
